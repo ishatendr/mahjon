@@ -768,18 +768,18 @@
 </div>
 
 <nav class="nav">
-  <button class="active" onclick="showTab('dashboard')">📊 ダッシュボード</button>
+  <button onclick="showTab('dashboard')">📊 ダッシュボード</button>
   <button onclick="showTab('chart')">📈 グラフ</button>
   <button onclick="showTab('monthly')">📅 月別</button>
   <button onclick="showTab('breakdown')">🏠 内訳</button>
   <button onclick="showTab('records')">📋 記録一覧</button>
-  <button onclick="showTab('input')">✏️ 新規入力</button>
+  <button class="active" onclick="showTab('input')">✏️ 新規入力</button>
 </nav>
 
 <div class="main">
 
   <!-- DASHBOARD -->
-  <div id="tab-dashboard" class="tab-content active">
+  <div id="tab-dashboard" class="tab-content">
     <div class="stat-grid" id="stat-grid"></div>
     <div class="chart-card">
       <h3>累計収支の推移</h3>
@@ -842,6 +842,34 @@
 
   <!-- BREAKDOWN -->
   <div id="tab-breakdown" class="tab-content">
+    <div class="filters" style="margin-bottom:20px">
+      <div class="filter-group">
+        <label>開始日</label>
+        <input type="date" id="bd-date-from">
+      </div>
+      <div class="filter-group">
+        <label>終了日</label>
+        <input type="date" id="bd-date-to">
+      </div>
+      <div class="filter-group">
+        <label>場所</label>
+        <select id="bd-location"><option value="">すべて</option></select>
+      </div>
+      <div class="filter-group">
+        <label>レート</label>
+        <select id="bd-rate"><option value="">すべて</option></select>
+      </div>
+      <div class="filter-group">
+        <label>勝敗</label>
+        <select id="bd-result">
+          <option value="">すべて</option>
+          <option value="win">勝ちのみ</option>
+          <option value="lose">負けのみ</option>
+        </select>
+      </div>
+      <button class="filter-btn" onclick="applyBreakdownFilters()">絞り込む</button>
+      <button class="filter-btn reset" onclick="resetBreakdownFilters()">リセット</button>
+    </div>
     <div class="breakdown-grid">
       <div class="breakdown-card">
         <h3>場所別集計</h3>
@@ -858,19 +886,12 @@
         </table>
       </div>
     </div>
-    <div class="breakdown-grid" style="margin-top:20px">
+    <div style="margin-top:20px">
       <div class="breakdown-card">
         <h3>年別集計</h3>
         <table class="breakdown-table">
-          <thead><tr><th>年</th><th>回数</th><th>合計収支</th><th>平均</th></tr></thead>
+          <thead><tr><th>年</th><th>回数</th><th>合計収支</th><th>平均</th><th>最高</th><th>最大負け</th></tr></thead>
           <tbody id="breakdown-year"></tbody>
-        </table>
-      </div>
-      <div class="breakdown-card">
-        <h3>曜日別集計</h3>
-        <table class="breakdown-table">
-          <thead><tr><th>曜日</th><th>回数</th><th>合計収支</th><th>平均</th></tr></thead>
-          <tbody id="breakdown-dow"></tbody>
         </table>
       </div>
     </div>
@@ -924,6 +945,7 @@
               <th>場所</th>
               <th onclick="sortTable('cumulative')">累計<span class="sort-icon">↕</span></th>
               <th>メモ</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="records-tbody"></tbody>
@@ -937,7 +959,7 @@
 
 
   <!-- INPUT -->
-  <div id="tab-input" class="tab-content">
+  <div id="tab-input" class="tab-content active">
     <div class="input-layout">
 
       <!-- LEFT: FORM -->
@@ -1051,10 +1073,56 @@
 
 <!-- MODAL -->
 <div class="modal-overlay" id="modal" onclick="closeModal(event)">
-  <div class="modal">
-    <h3>🀄 対局詳細</h3>
-    <div id="modal-content"></div>
-    <button class="modal-close" onclick="document.getElementById('modal').classList.remove('show')">閉じる</button>
+  <div class="modal" style="max-width:520px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+      <h3 style="margin:0;color:var(--gold)">🀄 対局詳細 / 編集</h3>
+      <span id="modal-record-id" style="font-size:0.75rem;color:var(--text3)"></span>
+    </div>
+    <!-- VIEW MODE -->
+    <div id="modal-view">
+      <div id="modal-content"></div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="submit-btn" style="background:var(--bg2);border:1px solid var(--border);color:var(--text2)" onclick="switchToEditMode()">✏️ 編集する</button>
+        <button class="modal-close" style="margin:0" onclick="document.getElementById('modal').classList.remove('show')">閉じる</button>
+      </div>
+    </div>
+    <!-- EDIT MODE -->
+    <div id="modal-edit" style="display:none">
+      <div class="form-row">
+        <div class="form-group">
+          <label>日付</label>
+          <input type="date" id="edit-date">
+        </div>
+        <div class="form-group">
+          <label>収支 (円)</label>
+          <input type="number" id="edit-profit">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>場代 (円)</label>
+          <input type="number" id="edit-fee">
+        </div>
+        <div class="form-group">
+          <label>レート</label>
+          <input type="text" id="edit-rate" list="edit-rate-list">
+          <datalist id="edit-rate-list"></datalist>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>場所</label>
+        <input type="text" id="edit-location" list="edit-location-list">
+        <datalist id="edit-location-list"></datalist>
+      </div>
+      <div class="form-group">
+        <label>メモ</label>
+        <textarea id="edit-notes" style="min-height:60px"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="submit-btn" onclick="saveEdit()">💾 保存</button>
+        <button class="modal-close" style="margin:0" onclick="switchToViewMode()">キャンセル</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1091,11 +1159,6 @@ function fmtDate(s) {
 }
 function getYearMonth(s) { return s.slice(0,7); }
 function getYear(s) { return s.slice(0,4); }
-function getDow(s) {
-  const days = ['日','月','火','水','木','金','土'];
-  return days[new Date(s).getDay()];
-}
-
 function groupBy(arr, fn) {
   return arr.reduce((m, x) => {
     const k = fn(x);
@@ -1112,6 +1175,7 @@ function getBadgeClass(rate) {
 
 // ===================== INIT =====================
 function init() {
+  initBreakdownFilters();
   // Header
   const total = RAW_DATA[RAW_DATA.length - 1]?.cumulative || 0;
   const el = document.getElementById('header-total');
@@ -1420,13 +1484,62 @@ function buildMonthlyList() {
 }
 
 // ===================== BREAKDOWN =====================
+let bdFilterData = null; // null = use RAW_DATA
+
+function initBreakdownFilters() {
+  const locs = [...new Set(RAW_DATA.map(x => x.location).filter(Boolean))].sort();
+  const rates = [...new Set(RAW_DATA.map(x => x.rate).filter(Boolean))].sort();
+  document.getElementById('bd-location').innerHTML =
+    '<option value="">すべて</option>' + locs.map(l => `<option>${l}</option>`).join('');
+  document.getElementById('bd-rate').innerHTML =
+    '<option value="">すべて</option>' + rates.map(r => `<option>${r}</option>`).join('');
+  const el_from = document.getElementById('bd-date-from');
+  const el_to = document.getElementById('bd-date-to');
+  if (!el_from.value) el_from.value = RAW_DATA[0].date;
+  if (!el_to.value) el_to.value = RAW_DATA[RAW_DATA.length-1].date;
+}
+
+function applyBreakdownFilters() {
+  const from = document.getElementById('bd-date-from').value;
+  const to = document.getElementById('bd-date-to').value;
+  const loc = document.getElementById('bd-location').value;
+  const rate = document.getElementById('bd-rate').value;
+  const result = document.getElementById('bd-result').value;
+  bdFilterData = RAW_DATA.filter(x => {
+    if (from && x.date < from) return false;
+    if (to && x.date > to) return false;
+    if (loc && x.location !== loc) return false;
+    if (rate && x.rate !== rate) return false;
+    if (result === 'win' && x.profit <= 0) return false;
+    if (result === 'lose' && x.profit >= 0) return false;
+    return true;
+  });
+  buildBreakdowns();
+}
+
+function resetBreakdownFilters() {
+  bdFilterData = null;
+  document.getElementById('bd-location').value = '';
+  document.getElementById('bd-rate').value = '';
+  document.getElementById('bd-result').value = '';
+  document.getElementById('bd-date-from').value = RAW_DATA[0].date;
+  document.getElementById('bd-date-to').value = RAW_DATA[RAW_DATA.length-1].date;
+  buildBreakdowns();
+}
+
 function buildBreakdowns() {
-  const d = RAW_DATA;
+  const d = bdFilterData || RAW_DATA;
+  if (!d.length) {
+    ['breakdown-location','breakdown-rate','breakdown-year'].forEach(id => {
+      document.getElementById(id).innerHTML = '<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:16px">データなし</td></tr>';
+    });
+    return;
+  }
 
   // Location
   const byLoc = groupBy(d, x => x.location || 'その他');
   const locKeys = Object.keys(byLoc).sort((a,b) => byLoc[b].reduce((s,x)=>s+x.profit,0) - byLoc[a].reduce((s,x)=>s+x.profit,0));
-  const maxAbsLoc = Math.max(...locKeys.map(k => Math.abs(byLoc[k].reduce((s,x)=>s+x.profit,0))));
+  const maxAbsLoc = Math.max(...locKeys.map(k => Math.abs(byLoc[k].reduce((s,x)=>s+x.profit,0)))) || 1;
   document.getElementById('breakdown-location').innerHTML = locKeys.map(k => {
     const total = byLoc[k].reduce((s,x)=>s+x.profit,0);
     const pct = Math.abs(total) / maxAbsLoc * 100;
@@ -1443,7 +1556,7 @@ function buildBreakdowns() {
   // Rate
   const byRate = groupBy(d, x => x.rate || '?');
   const rateKeys = Object.keys(byRate).sort((a,b) => byRate[b].reduce((s,x)=>s+x.profit,0) - byRate[a].reduce((s,x)=>s+x.profit,0));
-  const maxAbsRate = Math.max(...rateKeys.map(k => Math.abs(byRate[k].reduce((s,x)=>s+x.profit,0))));
+  const maxAbsRate = Math.max(...rateKeys.map(k => Math.abs(byRate[k].reduce((s,x)=>s+x.profit,0)))) || 1;
   document.getElementById('breakdown-rate').innerHTML = rateKeys.map(k => {
     const total = byRate[k].reduce((s,x)=>s+x.profit,0);
     const pct = Math.abs(total) / maxAbsRate * 100;
@@ -1457,36 +1570,24 @@ function buildBreakdowns() {
     </tr>`;
   }).join('');
 
-  // Year
+  // Year (with max/min)
   const byYear = groupBy(d, x => getYear(x.date));
   const yearKeys = Object.keys(byYear).sort().reverse();
   document.getElementById('breakdown-year').innerHTML = yearKeys.map(y => {
     const records = byYear[y];
     const total = records.reduce((s,x)=>s+x.profit,0);
     const avg = Math.round(total / records.length);
+    const best = Math.max(...records.map(x=>x.profit));
+    const worst = Math.min(...records.map(x=>x.profit));
     return `<tr>
       <td>${y}年</td>
       <td>${records.length}</td>
       <td style="color:${total>=0?'#4caf50':'#ef5350'}">${fmtPlain(total)}</td>
       <td style="color:${avg>=0?'#81c784':'#ef9a9a'}">${fmtPlain(avg)}</td>
+      <td style="color:#81c784">${fmt(best)}</td>
+      <td style="color:#ef9a9a">${fmt(worst)}</td>
     </tr>`;
   }).join('');
-
-  // DOW
-  const dows = ['月','火','水','木','金','土','日'];
-  const byDow = groupBy(d, x => getDow(x.date));
-  document.getElementById('breakdown-dow').innerHTML = dows.map(dow => {
-    if (!byDow[dow]) return '';
-    const records = byDow[dow];
-    const total = records.reduce((s,x)=>s+x.profit,0);
-    const avg = Math.round(total / records.length);
-    return `<tr>
-      <td>${dow}曜日</td>
-      <td>${records.length}</td>
-      <td style="color:${total>=0?'#4caf50':'#ef5350'}">${fmtPlain(total)}</td>
-      <td style="color:${avg>=0?'#81c784':'#ef9a9a'}">${fmtPlain(avg)}</td>
-    </tr>`;
-  }).filter(Boolean).join('');
 }
 
 // ===================== FILTERS =====================
@@ -1563,7 +1664,7 @@ function renderTable() {
   const pageData = sorted.slice(start, start + PAGE_SIZE);
 
   document.getElementById('records-tbody').innerHTML = pageData.map(r => `
-    <tr onclick="showModal(${r.id})" style="cursor:pointer">
+    <tr>
       <td style="color:var(--text3)">${r.id ?? ''}</td>
       <td>${fmtDate(r.date)}</td>
       <td class="td-profit ${r.profit >= 0 ? 'positive' : 'negative'}">${fmt(r.profit)}</td>
@@ -1572,6 +1673,7 @@ function renderTable() {
       <td>${r.location}</td>
       <td class="td-cumulative ${r.cumulative >= 0 ? 'positive' : 'negative'}">${fmtPlain(r.cumulative)}</td>
       <td class="notes-cell" title="${r.notes}">${r.notes}</td>
+      <td><button class="del-btn" style="color:var(--text3);border-color:var(--border)" onclick="showModal(${r.id})">詳細/編集</button></td>
     </tr>
   `).join('');
 
@@ -1605,10 +1707,39 @@ function goPage(p) {
   document.querySelector('.table-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ===================== MODAL =====================
+// ===================== MODAL / EDIT =====================
+const EDIT_KEY = 'mahjong_edits_v1';
+let editingId = null;
+
+function loadEdits() {
+  try { return JSON.parse(localStorage.getItem(EDIT_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function saveEdits(edits) {
+  localStorage.setItem(EDIT_KEY, JSON.stringify(edits));
+}
+
+// Apply stored edits to RAW_DATA on startup
+(function applyStoredEdits() {
+  const edits = loadEdits();
+  Object.entries(edits).forEach(([idStr, patch]) => {
+    const id = Number(idStr);
+    const r = RAW_DATA.find(x => x.id === id);
+    if (r) Object.assign(r, patch);
+  });
+  // Recompute cumulative after any edits
+  RAW_DATA.sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  let cum = 0;
+  RAW_DATA.forEach(r => { cum += r.profit; r.cumulative = cum; });
+})();
+
 function showModal(id) {
   const r = RAW_DATA.find(x => x.id === id);
   if (!r) return;
+  editingId = id;
+  document.getElementById('modal-record-id').textContent = `#${r.id}`;
+
   const rows = [
     ['日付', fmtDate(r.date)],
     ['収支', `<span style="color:${r.profit>=0?'#4caf50':'#ef5350'};font-weight:700">${fmt(r.profit)}</span>`],
@@ -1622,7 +1753,83 @@ function showModal(id) {
 
   document.getElementById('modal-content').innerHTML =
     rows.map(([k,v]) => `<div class="modal-row"><span class="key">${k}</span><span class="val">${v}</span></div>`).join('');
+
+  switchToViewMode();
   document.getElementById('modal').classList.add('show');
+}
+
+function switchToEditMode() {
+  const r = RAW_DATA.find(x => x.id === editingId);
+  if (!r) return;
+
+  document.getElementById('edit-date').value = r.date;
+  document.getElementById('edit-profit').value = r.profit;
+  document.getElementById('edit-fee').value = r.fee || 0;
+  document.getElementById('edit-rate').value = r.rate || '';
+  document.getElementById('edit-location').value = r.location || '';
+  document.getElementById('edit-notes').value = r.notes || '';
+
+  // Populate datalists
+  const allRates = [...new Set(RAW_DATA.map(x=>x.rate).filter(Boolean))].sort();
+  const allLocs = [...new Set(RAW_DATA.map(x=>x.location).filter(Boolean))].sort();
+  document.getElementById('edit-rate-list').innerHTML = allRates.map(v=>`<option value="${v}">`).join('');
+  document.getElementById('edit-location-list').innerHTML = allLocs.map(v=>`<option value="${v}">`).join('');
+
+  document.getElementById('modal-view').style.display = 'none';
+  document.getElementById('modal-edit').style.display = 'block';
+}
+
+function switchToViewMode() {
+  document.getElementById('modal-view').style.display = 'block';
+  document.getElementById('modal-edit').style.display = 'none';
+}
+
+function saveEdit() {
+  const date = document.getElementById('edit-date').value;
+  const profitStr = document.getElementById('edit-profit').value;
+  if (!date || !profitStr) { showToast('日付と収支は必須です', true); return; }
+
+  const patch = {
+    date,
+    profit: parseInt(profitStr),
+    fee: parseInt(document.getElementById('edit-fee').value) || 0,
+    rate: document.getElementById('edit-rate').value.trim(),
+    location: document.getElementById('edit-location').value.trim(),
+    notes: document.getElementById('edit-notes').value.trim(),
+  };
+
+  // Apply to RAW_DATA
+  const r = RAW_DATA.find(x => x.id === editingId);
+  if (r) Object.assign(r, patch);
+
+  // Persist edit
+  if (r && r._newId) {
+    // It's a new entry — update in newEntries localStorage
+    const stored = loadNewEntries();
+    const idx = stored.findIndex(e => e._newId === r._newId);
+    if (idx !== -1) { Object.assign(stored[idx], patch); saveNewEntries(stored); }
+  } else {
+    // Original entry — store override
+    const edits = loadEdits();
+    edits[editingId] = patch;
+    saveEdits(edits);
+  }
+
+  // Recompute cumulative
+  RAW_DATA.sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  let cum = 0;
+  RAW_DATA.forEach(row => { cum += row.profit; row.cumulative = cum; });
+  filteredData = [...RAW_DATA];
+
+  // Refresh UI
+  buildStatCards();
+  buildDashboardCharts();
+  buildBreakdowns();
+  renderTable();
+  renderNewEntriesTable();
+
+  document.getElementById('modal').classList.remove('show');
+  showToast('✓ 編集を保存しました');
 }
 
 function closeModal(e) {
@@ -1640,6 +1847,7 @@ function showTab(name) {
 
   if (name === 'chart' && !charts['cum-d']) buildDetailCharts('all');
   if (name === 'monthly') buildMonthlyList();
+  if (name === 'breakdown') { initBreakdownFilters(); buildBreakdowns(); }
 }
 
 
@@ -1763,6 +1971,11 @@ function submitEntry() {
 
   // Refresh UI
   buildStatCards();
+  buildDashboardCharts();
+  buildBreakdowns();
+  initBreakdownFilters();
+  buildFilters();
+  buildYearTabs();
   renderNewEntriesTable();
   renderTable();
   showToast('✓ 保存しました！');
@@ -1784,7 +1997,10 @@ function renderNewEntriesTable() {
       <td><span class="badge ${getBadgeClass(e.rate)}">${e.rate}</span></td>
       <td>${e.location}</td>
       <td style="color:var(--text3);font-size:0.75rem;max-width:120px;overflow:hidden;text-overflow:ellipsis">${e.notes||''}</td>
-      <td><button class="del-btn" onclick="deleteEntry('${e._newId}')">削除</button></td>
+        <td style="display:flex;gap:4px">
+        <button class="del-btn" style="color:var(--text3);border-color:var(--border)" onclick="editNewEntry('${e._newId}')">編集</button>
+        <button class="del-btn" onclick="deleteEntry('${e._newId}')">削除</button>
+      </td>
     </tr>
   `).join('');
 
@@ -1950,6 +2166,11 @@ function renderCustomValueManager() {
   el.innerHTML = (data.rates.length + data.locations.length === 0)
     ? '<div style="color:var(--text3);font-size:0.82rem">カスタム値はまだありません</div>'
     : section('rates', '追加したレート', data.rates) + section('locations', '追加した場所', data.locations);
+}
+
+function editNewEntry(newId) {
+  const r = RAW_DATA.find(x => x._newId === newId);
+  if (r) showModal(r.id);
 }
 
 function showToast(msg, isError=false) {
