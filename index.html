@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🀄 麻雀成績管理</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --green: #1a6b3c;
@@ -752,6 +753,71 @@
     font-size: 0.85rem;
   }
 
+
+  /* ===== EXCEL IMPORT ===== */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 36px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bg2);
+    margin-bottom: 16px;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--gold);
+    background: rgba(232,184,75,0.05);
+  }
+  .drop-zone .drop-icon { font-size: 2.2rem; margin-bottom: 10px; }
+  .drop-zone .drop-text { color: var(--text2); font-size: 0.9rem; margin-bottom: 6px; }
+  .drop-zone .drop-sub { color: var(--text3); font-size: 0.78rem; }
+
+  .import-status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 9px;
+    font-size: 0.84rem;
+  }
+  .import-status.ok { background: rgba(76,175,80,0.12); border: 1px solid rgba(76,175,80,0.25); }
+  .import-status.none { background: var(--bg3); border: 1px solid var(--border); color: var(--text3); }
+  .import-status.loading { background: rgba(232,184,75,0.1); border: 1px solid rgba(232,184,75,0.2); }
+
+  .import-status .status-icon { font-size: 1.3rem; }
+  .import-status .status-text { flex: 1; }
+  .import-status .status-label { color: var(--text3); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; }
+  .import-status .status-val { color: var(--text); font-weight: 600; margin-top: 1px; }
+
+  .manual-toggle {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .manual-toggle .toggle-arrow { color: var(--text3); font-size: 0.8rem; transition: transform 0.2s; }
+  .manual-toggle.open .toggle-arrow { transform: rotate(90deg); }
+
+  .import-progress {
+    height: 4px;
+    background: var(--bg3);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 10px;
+    display: none;
+  }
+  .import-progress .progress-bar {
+    height: 100%;
+    background: var(--gold);
+    border-radius: 2px;
+    animation: progress-pulse 1s ease-in-out infinite;
+  }
+  @keyframes progress-pulse {
+    0%,100% { opacity: 1; } 50% { opacity: 0.5; }
+  }
+
 </style>
 </head>
 <body>
@@ -860,6 +926,15 @@
         <select id="bd-rate"><option value="">すべて</option></select>
       </div>
       <div class="filter-group">
+        <label>種別</label>
+        <select id="bd-sanyon">
+          <option value="">すべて</option>
+          <option value="三麻">三麻</option>
+          <option value="四麻">四麻</option>
+          <option value="その他">その他</option>
+        </select>
+      </div>
+      <div class="filter-group">
         <label>勝敗</label>
         <select id="bd-result">
           <option value="">すべて</option>
@@ -887,12 +962,21 @@
       </div>
     </div>
     <div style="margin-top:20px">
-      <div class="breakdown-card">
-        <h3>年別集計</h3>
-        <table class="breakdown-table">
-          <thead><tr><th>年</th><th>回数</th><th>合計収支</th><th>平均</th><th>最高</th><th>最大負け</th></tr></thead>
-          <tbody id="breakdown-year"></tbody>
-        </table>
+      <div class="breakdown-grid">
+        <div class="breakdown-card">
+          <h3>三麻 / 四麻 比較</h3>
+          <table class="breakdown-table">
+            <thead><tr><th>種別</th><th>回数</th><th>合計収支</th><th>平均</th><th>勝率</th></tr></thead>
+            <tbody id="breakdown-sanyon"></tbody>
+          </table>
+        </div>
+        <div class="breakdown-card">
+          <h3>年別集計</h3>
+          <table class="breakdown-table">
+            <thead><tr><th>年</th><th>回数</th><th>合計収支</th><th>平均</th><th>最高</th><th>最大負け</th></tr></thead>
+            <tbody id="breakdown-year"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -915,6 +999,15 @@
       <div class="filter-group">
         <label>レート</label>
         <select id="f-rate"><option value="">すべて</option></select>
+      </div>
+      <div class="filter-group">
+        <label>種別</label>
+        <select id="f-sanyon">
+          <option value="">すべて</option>
+          <option value="三麻">三麻</option>
+          <option value="四麻">四麻</option>
+          <option value="その他">その他</option>
+        </select>
       </div>
       <div class="filter-group">
         <label>勝敗</label>
@@ -960,110 +1053,109 @@
 
   <!-- INPUT -->
   <div id="tab-input" class="tab-content active">
+
+    <!-- EXCEL IMPORT (primary) -->
+    <div class="form-card" style="margin-bottom:20px">
+      <h3>📂 Excelファイルを読み込む</h3>
+      <div class="drop-zone" id="drop-zone"
+        onclick="document.getElementById('excel-file').click()"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="handleExcelDrop(event)">
+        <div class="drop-icon">📊</div>
+        <div class="drop-text">麻雀集計.xlsx をここにドロップ</div>
+        <div class="drop-sub">またはクリックしてファイルを選択（収支シートを読み込みます）</div>
+        <input type="file" id="excel-file" accept=".xlsx,.xls" style="display:none"
+          onchange="handleExcelFile(this.files[0])">
+      </div>
+      <div class="import-progress" id="import-progress"><div class="progress-bar"></div></div>
+      <div id="import-status-wrap"></div>
+    </div>
+
     <div class="input-layout">
 
-      <!-- LEFT: FORM -->
+      <!-- LEFT: MANUAL ADDITION (collapsible) -->
       <div class="form-card">
-        <h3>✏️ 新しい記録を入力</h3>
+        <h3 class="manual-toggle" id="manual-toggle" onclick="toggleManualForm()">
+          ✏️ 手動で1件追加
+          <span class="toggle-arrow">▶</span>
+        </h3>
+        <div id="manual-form-body" style="display:none;margin-top:16px">
 
-        <div class="form-row">
-          <div class="form-group">
-            <label>日付 <span class="required">*</span></label>
-            <input type="date" id="in-date" />
+          <div class="form-row">
+            <div class="form-group">
+              <label>日付 <span class="required">*</span></label>
+              <input type="date" id="in-date" />
+            </div>
+            <div class="form-group">
+              <label>収支 (円) <span class="required">*</span></label>
+              <input type="number" id="in-profit" placeholder="例: 15000 または -8000" />
+            </div>
           </div>
-          <div class="form-group">
-            <label>収支 (円) <span class="required">*</span></label>
-            <input type="number" id="in-profit" placeholder="例: 15000 または -8000" />
-          </div>
-        </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label>場代 (円)</label>
-            <input type="number" id="in-fee" placeholder="例: 5000" value="0" />
+          <div class="form-row">
+            <div class="form-group">
+              <label>場代 (円)</label>
+              <input type="number" id="in-fee" placeholder="例: 5000" value="0" />
+            </div>
+            <div class="form-group">
+              <label>レート</label>
+              <select id="in-rate" onchange="updatePreview()">
+                <option value="3a">3a</option>
+                <option value="3b">3b</option>
+                <option value="4a">4a</option>
+                <option value="4b">4b</option>
+                <option value="ピン東">ピン東</option>
+                <option value="2.0③">2.0③</option>
+                <option value="2.0④">2.0④</option>
+                <option value="クソルール">クソルール</option>
+                <option value="0.7">0.7</option>
+                <option value="カスタム" id="rate-custom-opt">▼ 手入力...</option>
+              </select>
+            </div>
           </div>
-          <div class="form-group">
-            <label>レート</label>
-            <select id="in-rate" onchange="updatePreview()">
-              <option value="3a">3a</option>
-              <option value="3b">3b</option>
-              <option value="4a">4a</option>
-              <option value="4b">4b</option>
-              <option value="ピン東">ピン東</option>
-              <option value="2.0③">2.0③</option>
-              <option value="2.0④">2.0④</option>
-              <option value="クソルール">クソルール</option>
-              <option value="0.7">0.7</option>
-              <option value="カスタム" id="rate-custom-opt">▼ 手入力...</option>
-            </select>
-          </div>
+
           <div class="form-group" id="custom-rate-group" style="display:none">
             <label>レート（手入力）</label>
             <input type="text" id="in-rate-custom" placeholder="例: 5a, ピン南, 裏なし など" />
           </div>
-        </div>
 
-        <div class="form-group">
-          <label>場所</label>
-          <select id="in-location" onchange="updatePreview()">
-            <option value="セット">セット</option>
-            <option value="マーチャオ">マーチャオ</option>
-            <option value="フュージョン">フュージョン</option>
-            <option value="大天閣">大天閣</option>
-            <option value="その他">その他</option>
-            <option value="徳島サカエ">徳島サカエ</option>
-            <option value="キラーチューン">キラーチューン</option>
-            <option value="ゴールド">ゴールド</option>
-            <option value="人参クラブ">人参クラブ</option>
-            <option value="球児">球児</option>
-            <option value="八万">八万</option>
-            <option value="神戸クラブ">神戸クラブ</option>
-            <option value="HAPPY">HAPPY</option>
-            <option value="DF">DF</option>
-            <option value="re：棒">re：棒</option>
-            <option value="ハレルヤ">ハレルヤ</option>
-            <option value="さん莊">さん莊</option>
-            <option value="にこにこ">にこにこ</option>
-            <option value="カスタム">▼ 手入力...</option>
-          </select>
-        </div>
+          <div class="form-group">
+            <label>場所</label>
+            <input type="text" id="in-location" list="in-location-list" placeholder="場所を入力または選択" oninput="updatePreview()">
+            <datalist id="in-location-list"></datalist>
+          </div>
 
-        <div class="form-group" id="custom-location-group" style="display:none">
-          <label>場所（手入力）<small style="color:var(--text3);margin-left:6px">— 次回から候補に追加されます</small></label>
-          <input type="text" id="in-location-custom" placeholder="場所名を入力" />
-        </div>
+          <div class="form-group">
+            <label>メモ・メンツ</label>
+            <textarea id="in-notes" placeholder="相手の名前、特記事項など"></textarea>
+          </div>
 
-        <div class="form-group">
-          <label>メモ・メンツ</label>
-          <textarea id="in-notes" placeholder="相手の名前、特記事項など"></textarea>
-        </div>
+          <div class="form-preview" id="form-preview">
+            <div class="pv-row"><span class="key">日付</span><span id="pv-date">—</span></div>
+            <div class="pv-row"><span class="key">場所</span><span id="pv-loc">—</span></div>
+            <div class="pv-row"><span class="key">レート</span><span id="pv-rate">—</span></div>
+            <div class="pv-row"><span class="key">場代</span><span id="pv-fee">—</span></div>
+            <div class="pv-row pv-profit"><span class="key">収支</span><span id="pv-profit" style="font-weight:700">—</span></div>
+          </div>
 
-        <!-- PREVIEW -->
-        <div class="form-preview" id="form-preview">
-          <div class="pv-row"><span class="key">日付</span><span id="pv-date">—</span></div>
-          <div class="pv-row"><span class="key">場所</span><span id="pv-loc">—</span></div>
-          <div class="pv-row"><span class="key">レート</span><span id="pv-rate">—</span></div>
-          <div class="pv-row"><span class="key">場代</span><span id="pv-fee">—</span></div>
-          <div class="pv-row pv-profit"><span class="key">収支</span><span id="pv-profit" style="font-weight:700">—</span></div>
+          <button class="submit-btn" onclick="submitEntry()">💾 保存する</button>
         </div>
-
-        <button class="submit-btn" onclick="submitEntry()">💾 保存する</button>
       </div>
 
-      <!-- RIGHT: SAVED NEW ENTRIES -->
+      <!-- RIGHT: NEW ENTRIES + EXPORT -->
       <div class="form-card">
-        <h3>📝 追加した記録</h3>
+        <h3>📝 手動追加した記録</h3>
 
         <div class="export-row">
           <button class="export-btn" onclick="exportCSV()">⬇ CSV出力</button>
-          <button class="export-btn" onclick="exportHTML()">⬇ HTMLを更新保存</button>
           <button class="export-btn" onclick="clearNewEntries()" style="color:#ef9a9a;border-color:rgba(239,83,80,0.3)">🗑 全削除</button>
         </div>
 
         <div id="custom-value-manager" style="margin-bottom:14px;padding:12px 0;border-bottom:1px solid var(--border)"></div>
 
         <div id="new-entries-container">
-          <div class="empty-state">まだ新しい記録はありません</div>
+          <div class="empty-state">まだ手動追加した記録はありません</div>
         </div>
       </div>
 
@@ -1173,6 +1265,14 @@ function getBadgeClass(rate) {
   return map[rate] || 'badge-other';
 }
 
+function getSanYon(rate) {
+  const SANMA = ['3a','3b','0.7','2.0③'];
+  const YONMA = ['4a','4b','ピン東','2.0④'];
+  if (SANMA.includes(rate)) return '三麻';
+  if (YONMA.includes(rate)) return '四麻';
+  return 'その他';
+}
+
 // ===================== INIT =====================
 function init() {
   initBreakdownFilters();
@@ -1208,15 +1308,21 @@ function buildStatCards() {
   const thisYearData = d.filter(x => x.date.startsWith(thisYear));
   const thisYearTotal = thisYearData.reduce((s,x) => s+x.profit, 0);
 
+  const sanma = d.filter(x => getSanYon(x.rate) === '三麻');
+  const yonma = d.filter(x => getSanYon(x.rate) === '四麻');
+  const sanmaTotal = sanma.reduce((s,x)=>s+x.profit,0);
+  const yonmaTotal = yonma.reduce((s,x)=>s+x.profit,0);
+
   const cards = [
     { label: '累計収支', value: fmtPlain(total), cls: total>=0?'gold':'lose' },
     { label: '対局数', value: d.length.toLocaleString() + '回', cls: '' },
     { label: '勝率', value: winRate + '%', sub: `${wins.length}勝 ${losses.length}敗`, cls: 'gold' },
     { label: '1試合平均', value: fmt(avg), cls: avg>=0?'win':'lose' },
+    { label: '三麻 累計', value: fmtPlain(sanmaTotal), sub: `${sanma.length}回`, cls: sanmaTotal>=0?'win':'lose' },
+    { label: '四麻 累計', value: fmtPlain(yonmaTotal), sub: `${yonma.length}回`, cls: yonmaTotal>=0?'win':'lose' },
+    { label: `${thisYear}年収支`, value: fmtPlain(thisYearTotal), cls: thisYearTotal>=0?'win':'lose', sub: `${thisYearData.length}回` },
     { label: '最高勝ち', value: fmt(maxWin), cls: 'win' },
     { label: '最大負け', value: fmt(maxLoss), cls: 'lose' },
-    { label: `${thisYear}年収支`, value: fmtPlain(thisYearTotal), cls: thisYearTotal>=0?'win':'lose', sub: `${thisYearData.length}回` },
-    { label: '記録期間', value: `${Math.round((new Date(d[d.length-1].date)-new Date(d[0].date))/(1000*60*60*24*365.25)*10)/10}年`, cls: 'gold' },
   ];
 
   document.getElementById('stat-grid').innerHTML = cards.map(c => `
@@ -1504,12 +1610,14 @@ function applyBreakdownFilters() {
   const to = document.getElementById('bd-date-to').value;
   const loc = document.getElementById('bd-location').value;
   const rate = document.getElementById('bd-rate').value;
+  const sanyon = document.getElementById('bd-sanyon').value;
   const result = document.getElementById('bd-result').value;
   bdFilterData = RAW_DATA.filter(x => {
     if (from && x.date < from) return false;
     if (to && x.date > to) return false;
     if (loc && x.location !== loc) return false;
     if (rate && x.rate !== rate) return false;
+    if (sanyon && getSanYon(x.rate) !== sanyon) return false;
     if (result === 'win' && x.profit <= 0) return false;
     if (result === 'lose' && x.profit >= 0) return false;
     return true;
@@ -1521,6 +1629,7 @@ function resetBreakdownFilters() {
   bdFilterData = null;
   document.getElementById('bd-location').value = '';
   document.getElementById('bd-rate').value = '';
+  document.getElementById('bd-sanyon').value = '';
   document.getElementById('bd-result').value = '';
   document.getElementById('bd-date-from').value = RAW_DATA[0].date;
   document.getElementById('bd-date-to').value = RAW_DATA[RAW_DATA.length-1].date;
@@ -1588,6 +1697,26 @@ function buildBreakdowns() {
       <td style="color:#ef9a9a">${fmt(worst)}</td>
     </tr>`;
   }).join('');
+
+  // 三麻 / 四麻 / その他
+  const SANYON_LABELS = ['三麻','四麻','その他'];
+  const SANYON_COLORS = { '三麻': '#e8b84b', '四麻': '#2196f3', 'その他': '#9e9e9e' };
+  const bySY = groupBy(d, x => getSanYon(x.rate));
+  document.getElementById('breakdown-sanyon').innerHTML = SANYON_LABELS.map(label => {
+    const records = bySY[label] || [];
+    if (!records.length) return `<tr><td style="color:var(--text3)">${label}</td><td>0</td><td>—</td><td>—</td><td>—</td></tr>`;
+    const total = records.reduce((s,x)=>s+x.profit,0);
+    const avg = Math.round(total / records.length);
+    const wins = records.filter(x=>x.profit>0).length;
+    const winRate = (wins/records.length*100).toFixed(1) + '%';
+    return `<tr>
+      <td><span style="color:${SANYON_COLORS[label]};font-weight:700">${label}</span></td>
+      <td>${records.length}</td>
+      <td style="color:${total>=0?'#4caf50':'#ef5350'}">${fmtPlain(total)}</td>
+      <td style="color:${avg>=0?'#81c784':'#ef9a9a'}">${fmtPlain(avg)}</td>
+      <td>${winRate}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ===================== FILTERS =====================
@@ -1608,6 +1737,7 @@ function applyFilters() {
   const to = document.getElementById('f-date-to').value;
   const loc = document.getElementById('f-location').value;
   const rate = document.getElementById('f-rate').value;
+  const sanyon = document.getElementById('f-sanyon').value;
   const result = document.getElementById('f-result').value;
 
   filteredData = RAW_DATA.filter(x => {
@@ -1615,6 +1745,7 @@ function applyFilters() {
     if (to && x.date > to) return false;
     if (loc && x.location !== loc) return false;
     if (rate && x.rate !== rate) return false;
+    if (sanyon && getSanYon(x.rate) !== sanyon) return false;
     if (result === 'win' && x.profit <= 0) return false;
     if (result === 'lose' && x.profit >= 0) return false;
     return true;
@@ -1630,6 +1761,7 @@ function resetFilters() {
   document.getElementById('f-date-to').value = RAW_DATA[RAW_DATA.length-1].date;
   document.getElementById('f-location').value = '';
   document.getElementById('f-rate').value = '';
+  document.getElementById('f-sanyon').value = '';
   document.getElementById('f-result').value = '';
   currentPage = 1;
   renderTable();
@@ -1669,11 +1801,14 @@ function renderTable() {
       <td>${fmtDate(r.date)}</td>
       <td class="td-profit ${r.profit >= 0 ? 'positive' : 'negative'}">${fmt(r.profit)}</td>
       <td style="color:var(--text3)">¥${(r.fee||0).toLocaleString()}</td>
-      <td><span class="badge ${getBadgeClass(r.rate)}">${r.rate}</span></td>
+      <td><span class="badge ${getBadgeClass(r.rate)}">${r.rate}</span> <span style="font-size:0.7rem;color:${getSanYon(r.rate)==='三麻'?'#e8b84b':getSanYon(r.rate)==='四麻'?'#64b5f6':'#9e9e9e'}">${getSanYon(r.rate)}</span></td>
       <td>${r.location}</td>
       <td class="td-cumulative ${r.cumulative >= 0 ? 'positive' : 'negative'}">${fmtPlain(r.cumulative)}</td>
       <td class="notes-cell" title="${r.notes}">${r.notes}</td>
-      <td><button class="del-btn" style="color:var(--text3);border-color:var(--border)" onclick="showModal(${r.id})">詳細/編集</button></td>
+      <td style="display:flex;gap:4px;align-items:center">
+        <button class="del-btn" style="color:var(--text3);border-color:var(--border);white-space:nowrap" onclick="showModal(${r.id})">詳細/編集</button>
+        <button class="del-btn" onclick="event.stopPropagation();deleteRecord(${r.id})">削除</button>
+      </td>
     </tr>
   `).join('');
 
@@ -1728,11 +1863,64 @@ function saveEdits(edits) {
     const r = RAW_DATA.find(x => x.id === id);
     if (r) Object.assign(r, patch);
   });
-  // Recompute cumulative after any edits
+  // Apply deleted IDs
+  const deletedIds = loadDeletedIds();
+  for (let i = RAW_DATA.length - 1; i >= 0; i--) {
+    if (deletedIds.has(String(RAW_DATA[i].id))) RAW_DATA.splice(i, 1);
+  }
+  // Recompute cumulative after any edits/deletes
   RAW_DATA.sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
   let cum = 0;
   RAW_DATA.forEach(r => { cum += r.profit; r.cumulative = cum; });
 })();
+
+const DELETED_KEY = 'mahjong_deleted_v1';
+function loadDeletedIds() {
+  try { return new Set(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]').map(String)); }
+  catch { return new Set(); }
+}
+function addDeletedId(id) {
+  const ids = loadDeletedIds();
+  ids.add(String(id));
+  localStorage.setItem(DELETED_KEY, JSON.stringify([...ids]));
+}
+
+function deleteRecord(id) {
+  const r = RAW_DATA.find(x => x.id === id);
+  if (!r) return;
+  if (!confirm(`#${id} (${r.date} / ${fmt(r.profit)}) を削除しますか？`)) return;
+
+  if (r._newId) {
+    // New entry: remove from newEntries localStorage
+    let stored = loadNewEntries();
+    stored = stored.filter(e => e._newId !== r._newId);
+    saveNewEntries(stored);
+  } else {
+    // Original entry: mark as deleted
+    addDeletedId(id);
+    // Also remove any edit override
+    const edits = loadEdits();
+    delete edits[id];
+    saveEdits(edits);
+  }
+
+  // Remove from RAW_DATA
+  const idx = RAW_DATA.findIndex(x => x.id === id);
+  if (idx !== -1) RAW_DATA.splice(idx, 1);
+
+  // Recompute cumulative
+  let cum = 0;
+  RAW_DATA.forEach(row => { cum += row.profit; row.cumulative = cum; });
+  filteredData = RAW_DATA.filter(x => filteredData.some(f => f.id === x.id) || false);
+  filteredData = [...RAW_DATA]; // reset filter after delete
+
+  buildStatCards();
+  buildDashboardCharts();
+  buildBreakdowns();
+  renderNewEntriesTable();
+  renderTable();
+  showToast('削除しました');
+}
 
 function showModal(id) {
   const r = RAW_DATA.find(x => x.id === id);
@@ -1853,6 +2041,8 @@ function showTab(name) {
 
 // ===================== INPUT / STORAGE =====================
 const STORAGE_KEY = 'mahjong_new_entries_v1';
+const IMPORT_KEY  = 'mahjong_imported_v1';
+const IMPORT_META_KEY = 'mahjong_import_meta_v1';
 
 function loadNewEntries() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
@@ -1862,6 +2052,32 @@ function loadNewEntries() {
 function saveNewEntries(entries) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 }
+
+function loadImportedData() {
+  try { return JSON.parse(localStorage.getItem(IMPORT_KEY) || 'null'); }
+  catch { return null; }
+}
+
+function saveImportedData(data) {
+  localStorage.setItem(IMPORT_KEY, JSON.stringify(data));
+  localStorage.setItem(IMPORT_META_KEY, JSON.stringify({
+    date: new Date().toISOString().slice(0,10),
+    count: data.length
+  }));
+}
+
+function loadImportMeta() {
+  try { return JSON.parse(localStorage.getItem(IMPORT_META_KEY) || 'null'); }
+  catch { return null; }
+}
+
+// Use imported data as base if available (replaces embedded RAW_DATA)
+(function useImportedDataIfAvailable() {
+  const imported = loadImportedData();
+  if (imported && imported.length) {
+    RAW_DATA.splice(0, RAW_DATA.length, ...imported);
+  }
+})();
 
 // Merge new entries into RAW_DATA on startup
 (function mergeStoredEntries() {
@@ -1892,9 +2108,7 @@ function updatePreview() {
   const rateSel = document.getElementById('in-rate').value;
   const rateCustom = document.getElementById('in-rate-custom').value.trim();
   const effectiveRate = rateSel === 'カスタム' ? rateCustom : rateSel;
-  const locSel = document.getElementById('in-location').value;
-  const locCustom = document.getElementById('in-location-custom').value;
-  const loc = locSel === 'カスタム' ? locCustom : locSel;
+  const loc = document.getElementById('in-location').value;
 
   document.getElementById('pv-date').textContent = date ? date.replace(/-/g,'/') : '—';
   document.getElementById('pv-loc').textContent = loc || '—';
@@ -1904,16 +2118,13 @@ function updatePreview() {
   profitEl.textContent = profit ? fmt(profit) : '—';
   profitEl.style.color = profit > 0 ? '#4caf50' : profit < 0 ? '#ef5350' : 'var(--text2)';
 
-  // show/hide custom location
-  document.getElementById('custom-location-group').style.display =
-    locSel === 'カスタム' ? 'block' : 'none';
   // show/hide custom rate
   document.getElementById('custom-rate-group').style.display =
     rateSel === 'カスタム' ? 'block' : 'none';
 }
 
 // Wire up live preview
-['in-date','in-profit','in-fee','in-rate','in-rate-custom','in-location','in-location-custom'].forEach(id => {
+['in-date','in-profit','in-fee','in-rate','in-rate-custom','in-location'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('input', updatePreview);
 });
@@ -1930,14 +2141,11 @@ function submitEntry() {
   const rateCustom = document.getElementById('in-rate-custom').value.trim();
   const rate = rateSel === 'カスタム' ? rateCustom : rateSel;
   if (!rate) { showToast('レートを入力してください', true); return; }
-  const locSel = document.getElementById('in-location').value;
-  const locCustom = document.getElementById('in-location-custom').value.trim();
-  const location = locSel === 'カスタム' ? locCustom : locSel;
+  const location = document.getElementById('in-location').value.trim();
   if (!location) { showToast('場所を入力してください', true); return; }
 
   // Save new custom values for future use
   if (rateSel === 'カスタム' && rateCustom) saveCustomValue('rates', rateCustom);
-  if (locSel === 'カスタム' && locCustom) saveCustomValue('locations', locCustom);
   const notes = document.getElementById('in-notes').value.trim();
 
   const newId = Date.now().toString();
@@ -1965,7 +2173,7 @@ function submitEntry() {
   document.getElementById('in-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('in-rate').value = '3a';
   document.getElementById('in-rate-custom').value = '';
-  document.getElementById('in-location-custom').value = '';
+  document.getElementById('in-location').value = '';
   rebuildCustomDropdowns();
   updatePreview();
 
@@ -2030,6 +2238,8 @@ function deleteEntry(newId) {
   filteredData = [...RAW_DATA];
 
   buildStatCards();
+  buildDashboardCharts();
+  buildBreakdowns();
   renderNewEntriesTable();
   renderTable();
   showToast('削除しました');
@@ -2126,19 +2336,15 @@ function rebuildCustomDropdowns() {
     rateSel.value = currentRate;
   }
 
-  // Location dropdown — insert before カスタム option
-  const locSel = document.getElementById('in-location');
-  const currentLoc = locSel.value;
-  Array.from(locSel.options).forEach(o => { if (o.dataset.custom) o.remove(); });
-  const locCustomOpt = locSel.querySelector('[value="カスタム"]');
-  data.locations.forEach(v => {
-    const o = new Option(v, v);
-    o.dataset.custom = '1';
-    locSel.insertBefore(o, locCustomOpt);
-  });
-  if (Array.from(locSel.options).find(o => o.value === currentLoc)) {
-    locSel.value = currentLoc;
-  }
+  // Location datalist — rebuild from all known locations
+  const allLocs = [...new Set([
+    ...['セット','マーチャオ','フュージョン','大天閣','その他','徳島サカエ','キラーチューン',
+        'ゴールド','人参クラブ','球児','八万','神戸クラブ','HAPPY','DF','re：棒','ハレルヤ','さん莊','にこにこ'],
+    ...data.locations,
+    ...RAW_DATA.map(x=>x.location).filter(Boolean)
+  ])].sort();
+  const locDL = document.getElementById('in-location-list');
+  if (locDL) locDL.innerHTML = allLocs.map(v=>`<option value="${v}">`).join('');
 
   // Also update the manage panel if visible
   renderCustomValueManager();
@@ -2173,6 +2379,215 @@ function editNewEntry(newId) {
   if (r) showModal(r.id);
 }
 
+// ===================== EXCEL IMPORT =====================
+function toggleManualForm() {
+  const body = document.getElementById('manual-form-body');
+  const toggle = document.getElementById('manual-toggle');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  toggle.classList.toggle('open', open);
+}
+
+function handleExcelDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleExcelFile(file);
+}
+
+function handleExcelFile(file) {
+  if (!file) return;
+  if (!file.name.match(/\.xlsx?$/i)) {
+    showToast('Excelファイル（.xlsx）を選択してください', true);
+    return;
+  }
+
+  // Show loading state
+  document.getElementById('import-progress').style.display = 'block';
+  document.getElementById('import-status-wrap').innerHTML = `
+    <div class="import-status loading">
+      <span class="status-icon">⏳</span>
+      <div class="status-text">
+        <div class="status-label">読み込み中</div>
+        <div class="status-val">${file.name}</div>
+      </div>
+    </div>`;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array', cellDates: true });
+
+      // Try 収支 sheet first, then first sheet
+      const sheetName = wb.SheetNames.includes('収支') ? '収支' : wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+
+      const records = parseExcelRows(rows);
+      if (!records.length) {
+        throw new Error('データが見つかりませんでした。収支シートを確認してください。');
+      }
+
+      // Save imported data
+      saveImportedData(records);
+
+      // Rebuild RAW_DATA
+      RAW_DATA.splice(0, RAW_DATA.length, ...records);
+
+      // Re-merge manual entries on top
+      const stored = loadNewEntries();
+      if (stored.length) {
+        const maxId = Math.max(...RAW_DATA.map(x => x.id || 0));
+        stored.forEach((e, i) => {
+          if (!RAW_DATA.find(x => x._newId === e._newId)) {
+            RAW_DATA.push({ ...e, id: maxId + i + 1 });
+          }
+        });
+        RAW_DATA.sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+      }
+
+      // Re-apply edits and deletions
+      const edits = loadEdits();
+      Object.entries(edits).forEach(([idStr, patch]) => {
+        const r = RAW_DATA.find(x => x.id === Number(idStr));
+        if (r) Object.assign(r, patch);
+      });
+      const deletedIds = loadDeletedIds();
+      for (let i = RAW_DATA.length - 1; i >= 0; i--) {
+        if (deletedIds.has(String(RAW_DATA[i].id))) RAW_DATA.splice(i, 1);
+      }
+
+      // Recompute cumulative
+      RAW_DATA.sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+      let cum = 0;
+      RAW_DATA.forEach(r => { cum += r.profit; r.cumulative = cum; });
+      filteredData = [...RAW_DATA];
+
+      // Refresh everything
+      buildStatCards();
+      buildDashboardCharts();
+      buildBreakdowns();
+      initBreakdownFilters();
+      buildFilters();
+      buildYearTabs();
+      renderNewEntriesTable();
+      renderTable();
+
+      document.getElementById('import-progress').style.display = 'none';
+      updateImportStatus();
+      showToast(`✓ ${records.length}件を読み込みました`);
+
+    } catch(err) {
+      document.getElementById('import-progress').style.display = 'none';
+      document.getElementById('import-status-wrap').innerHTML = `
+        <div class="import-status" style="background:rgba(239,83,80,0.1);border:1px solid rgba(239,83,80,0.25);color:#ef9a9a">
+          <span class="status-icon">❌</span>
+          <div class="status-text">
+            <div class="status-label">読み込みエラー</div>
+            <div class="status-val">${err.message}</div>
+          </div>
+        </div>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseExcelDate(val) {
+  if (!val) return null;
+  if (val instanceof Date) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth()+1).padStart(2,'0');
+    const d = String(val.getDate()).padStart(2,'0');
+    return `${y}-${m}-${d}`;
+  }
+  if (typeof val === 'string') {
+    const m = val.match(/(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  }
+  if (typeof val === 'number' && val > 40000) {
+    // Excel serial date
+    const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+    const y = d.getUTCFullYear(), mo = d.getUTCMonth()+1, dy = d.getUTCDate();
+    return `${y}-${String(mo).padStart(2,'0')}-${String(dy).padStart(2,'0')}`;
+  }
+  return null;
+}
+
+function parseExcelRows(rows) {
+  const records = [];
+  // Find the header row (row with 日付 and 収支)
+  let dataStartRow = 2; // default: row index 2
+  for (let i = 0; i < Math.min(5, rows.length); i++) {
+    const row = rows[i] || [];
+    if (row.some(v => v === '日付') && row.some(v => v === '収支')) {
+      dataStartRow = i + 1;
+      break;
+    }
+  }
+
+  for (let i = dataStartRow; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const num = row[0];
+    const dateVal = row[1];
+    const profit = row[2];
+
+    // Skip rows without date and profit
+    const date = parseExcelDate(dateVal);
+    if (!date || profit == null || typeof profit !== 'number') continue;
+
+    const fee = typeof row[3] === 'number' ? Math.round(row[3]) : 0;
+    const rate = row[4] != null ? String(row[4]).trim() : '';
+    const location = row[5] != null ? String(row[5]).trim() : '';
+    const cumulative = typeof row[6] === 'number' ? Math.round(row[6]) : null;
+    const notes = row[7] != null ? String(row[7]).trim() : '';
+
+    records.push({
+      id: typeof num === 'number' ? Math.round(num) : records.length + 1,
+      date,
+      profit: Math.round(profit),
+      fee,
+      rate,
+      location,
+      cumulative: cumulative || 0,
+      notes,
+      rounds: typeof row[8] === 'number' ? Math.round(row[8]) : null,
+      rank1: typeof row[9] === 'number' ? Math.round(row[9]) : null,
+      rank2: typeof row[10] === 'number' ? Math.round(row[10]) : null,
+      rank3: typeof row[11] === 'number' ? Math.round(row[11]) : null,
+      rank4: typeof row[12] === 'number' ? Math.round(row[12]) : null,
+    });
+  }
+
+  // Recompute cumulative from scratch
+  let cum = 0;
+  records.forEach(r => { cum += r.profit; r.cumulative = cum; });
+  return records;
+}
+
+function updateImportStatus() {
+  const meta = loadImportMeta();
+  const wrap = document.getElementById('import-status-wrap');
+  if (!wrap) return;
+  if (meta) {
+    wrap.innerHTML = `
+      <div class="import-status ok">
+        <span class="status-icon">✅</span>
+        <div class="status-text">
+          <div class="status-label">最終インポート</div>
+          <div class="status-val">${meta.date} — ${meta.count.toLocaleString()}件のデータを反映済み</div>
+        </div>
+      </div>`;
+  } else {
+    wrap.innerHTML = `
+      <div class="import-status none">
+        <span class="status-icon">📭</span>
+        <div class="status-text">まだインポートされていません。Excelファイルをドロップしてください。</div>
+      </div>`;
+  }
+}
+
 function showToast(msg, isError=false) {
   let t = document.getElementById('_toast');
   if (!t) {
@@ -2189,11 +2604,11 @@ function showToast(msg, isError=false) {
 
 
 // ===================== START =====================
-// Set today as default date
 document.getElementById("in-date").value = new Date().toISOString().slice(0,10);
 rebuildCustomDropdowns();
 updatePreview();
 renderNewEntriesTable();
+updateImportStatus();
 init();
 </script>
 </body>
